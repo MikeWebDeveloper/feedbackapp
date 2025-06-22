@@ -1,0 +1,207 @@
+---
+description: 
+globs: 
+alwaysApply: false
+---
+# Deployment & Environment Setup
+
+## Vercel Deployment Strategy
+
+### Project Configuration
+The application is optimized for Vercel deployment with Next.js 14 App Router. Key configuration in [package.json](mdc:package.json):
+
+```json
+{
+  "scripts": {
+    "build": "next build",
+    "dev": "next dev", 
+    "start": "next start",
+    "lint": "next lint"
+  },
+  "engines": {
+    "node": ">=18.17.0"
+  }
+}
+```
+
+## Environment Variables Configuration
+
+### Required Variables
+Based on the [Appwrite integration](mdc:src/lib/appwrite.ts), these environment variables are required:
+
+#### Client-Side Variables (NEXT_PUBLIC_*)
+```bash
+# Appwrite configuration - exposed to browser
+NEXT_PUBLIC_APPWRITE_ENDPOINT=https://cloud.appwrite.io/v1
+NEXT_PUBLIC_APPWRITE_PROJECT_ID=your-project-id
+```
+
+#### Server-Only Variables
+```bash
+# Server-side secrets - NOT exposed to browser
+APPWRITE_API_KEY=your-api-key
+APPWRITE_DATABASE_ID=feedback-platform-db
+APPWRITE_PROJECTS_COLLECTION_ID=projects
+APPWRITE_TASKS_COLLECTION_ID=tasks
+APPWRITE_STORAGE_BUCKET_ID=task-screenshots
+APPWRITE_DEVELOPERS_TEAM_ID=developers-team
+```
+
+## Appwrite Platform Configuration
+
+### Platform Setup Requirements
+In Appwrite Console, configure the platform to allow CORS:
+
+1. **Development Platform**:
+   - Type: Web App
+   - Hostname: `localhost:3000`
+
+2. **Production Platform**:
+   - Type: Web App  
+   - Hostname: `your-app.vercel.app`
+
+### Database Schema Setup
+Based on [types.ts](mdc:src/lib/types.ts), create collections with these attributes:
+
+#### Projects Collection
+```typescript
+// Collection ID: projects
+{
+  name: { type: 'string', size: 128, required: true },
+  description: { type: 'string', size: 512, required: false }
+}
+
+// Indexes: name (key index)
+```
+
+#### Tasks Collection  
+```typescript
+// Collection ID: tasks
+{
+  title: { type: 'string', size: 256, required: true },
+  description: { type: 'string', size: 4096, required: true },
+  type: { type: 'enum', elements: ['bug', 'improvement', 'feature'], required: true },
+  status: { type: 'enum', elements: ['open', 'in-progress', 'closed'], required: true },
+  projectId: { type: 'string', size: 36, required: true },
+  submittedBy: { type: 'string', size: 36, required: true },
+  submittedByName: { type: 'string', size: 128, required: true },
+  screenshotId: { type: 'string', size: 36, required: false }
+}
+
+// Indexes: projectId, submittedBy, status, type (key), title & description (fulltext)
+```
+
+### Storage Configuration
+Create a storage bucket with these settings:
+
+```typescript
+// Bucket ID: task-screenshots
+{
+  name: "Task Screenshots",
+  fileSecurity: true,
+  maximumFileSize: 5000000, // 5MB
+  allowedFileExtensions: ["jpg", "jpeg", "png", "gif", "webp"]
+}
+```
+
+### Permissions Configuration
+
+#### Collection Permissions
+```typescript
+// Projects Collection
+{
+  read: ["role:any"],
+  create: ["role:user"], 
+  update: ["role:team:developers:developer"],
+  delete: ["role:team:developers:developer"]
+}
+
+// Tasks Collection
+{
+  read: ["role:team:developers:developer"],
+  create: ["role:user"],
+  update: ["role:team:developers:developer"], 
+  delete: ["role:team:developers:developer"]
+}
+```
+
+#### Document-Level Security
+Enable document security on Tasks collection to ensure users can only access their own submitted tasks.
+
+## Authentication Setup
+
+### Teams and Roles Configuration
+Create the developer team structure:
+
+```typescript
+// Team: developers
+{
+  teamId: "developers-team",
+  name: "Developers",
+  roles: ["developer"]
+}
+```
+
+### User Management
+Users are managed through Appwrite Auth with email/password. Enable these auth methods in Appwrite Console:
+- Email/Password (required)
+- Email verification (recommended) 
+- Password recovery (recommended)
+
+## Deployment Pipeline
+
+### Automatic Deployment
+Connect Git repository to Vercel for automatic deployments:
+
+1. **Main Branch**: Deploys to production
+2. **Feature Branches**: Creates preview deployments
+3. **Pull Requests**: Creates preview deployments with unique URLs
+
+### Environment-Specific Builds
+Different configurations per environment:
+
+```typescript
+// Development
+- NEXT_PUBLIC_APPWRITE_PROJECT_ID: dev-project
+- Database: development collections
+
+// Production  
+- NEXT_PUBLIC_APPWRITE_PROJECT_ID: prod-project
+- Database: production collections
+```
+
+## Deployment Checklist
+
+### Pre-Deployment
+- [ ] Environment variables configured in Vercel
+- [ ] Appwrite platform hostnames added
+- [ ] Database collections and indexes created
+- [ ] Storage bucket configured with proper permissions
+- [ ] Developer team created with proper roles
+
+### Post-Deployment  
+- [ ] Test user registration and login
+- [ ] Verify task submission workflow
+- [ ] Test developer dashboard access
+- [ ] Confirm file upload functionality
+- [ ] Validate real-time updates
+
+## Troubleshooting Common Issues
+
+### CORS Errors
+```bash
+# Symptom: "Access-Control-Allow-Origin" errors
+# Solution: Add domain to Appwrite Console > Platforms
+```
+
+### Environment Variable Issues
+```bash
+# Symptom: "Cannot read property of undefined"
+# Solution: Ensure NEXT_PUBLIC_ prefix for client variables
+```
+
+### Authentication Failures
+```bash
+# Symptom: Session not persisting
+# Solution: Check cookie settings in auth.ts - ensure httpOnly, secure, sameSite
+```
